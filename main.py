@@ -6,11 +6,41 @@ class RV64:
         self.mem = bytearray(1024 * 1024)
 
 
-if __file__ == '__main__':
+if __name__ == '__main__':
     cpu = RV64()
 
-    # Load kernel
+    # Load kernel elf
     path_to_kernel = '/Users/Bartek/gitreps/os/kernel.elf'
+    kf = open(path_to_kernel, 'rb')
+    kernel_data = kf.read() # Byte array of the entire elf
+    kf.close()
+    import struct
 
-    with open(path_to_kernel, 'rb') as kernel:
-        kernel_data = kernel.read()
+    # Where does the program header table start, even though
+    # it seems its always directly after the header, i.e. 64
+    e_phoff = struct.unpack('<Q', kernel_data[32:40])[0]
+
+    # How many program headers are there
+    e_phnum = struct.unpack('<H', kernel_data[56:58])[0]
+
+    # Iterate over the table entries
+    for i in range(e_phnum):
+        # Calculate file offset of this ph entry
+        # Each ph entry is 56 bytes
+        e_offset = e_phoff + i*56 # the file offset of this ph entry
+        # each 
+        p_type = struct.unpack('<I', kernel_data[e_offset:e_offset+4])[0]
+
+        if p_type == 1:
+            # Load
+            p_offset = struct.unpack('<Q', kernel_data[e_offset+8:e_offset+16])[0]
+            p_vaddr = struct.unpack('<Q', kernel_data[e_offset+16:e_offset+24])[0]
+            p_filesz = struct.unpack('<Q', kernel_data[e_offset+32:e_offset+40])[0]
+            p_memsz = struct.unpack('<Q', kernel_data[e_offset+40:e_offset+48])[0]
+
+            # Copy segment to memory
+            mem_offset = p_vaddr - 0x80200000
+            cpu.mem[mem_offset:mem_offset+p_filesz] = kernel_data[p_offset:p_offset+p_filesz]
+            # Zero out bss
+            cpu.mem[mem_offset+p_filesz:mem_offset+p_memsz] = b'\x00' * (p_memsz - p_filesz)
+
