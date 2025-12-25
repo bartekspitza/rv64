@@ -1,10 +1,17 @@
-
+OFFSET = 0x80200000
 class RV64:
     def __init__(self):
         self.regs = [0] * 32
-        self.pc = 0x80200000
+        self.pc = OFFSET
         self.mem = bytearray(1024 * 1024)
-
+    
+    def fetch(self):
+        addr = self.pc - OFFSET
+        instr = struct.unpack('<I', self.mem[addr:addr+4])[0]
+        return instr
+    
+    def step(self):
+        self.pc += 4
 
 if __name__ == '__main__':
     cpu = RV64()
@@ -39,8 +46,7 @@ if __name__ == '__main__':
             p_memsz = struct.unpack('<Q', kernel_data[e_offset+40:e_offset+48])[0]
 
             # Copy segment to memory
-            mem_offset = p_vaddr - 0x80200000
+            mem_offset = p_vaddr - OFFSET
             cpu.mem[mem_offset:mem_offset+p_filesz] = kernel_data[p_offset:p_offset+p_filesz]
             # Zero out bss
             cpu.mem[mem_offset+p_filesz:mem_offset+p_memsz] = b'\x00' * (p_memsz - p_filesz)
-
