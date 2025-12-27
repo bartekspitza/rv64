@@ -1,4 +1,5 @@
 import struct
+from dataclasses import dataclass
 
 OFFSET = 0x80200000
 R_MASKS = [
@@ -11,57 +12,73 @@ R_MASKS = [
 ]
 twelwe_imm= 0b1111_1111_1110_0000_0000_0000_0000_0000, # imm
 
+def sign_extend(value, bits):
+    sign_bit_mask = 1 << (bits-1)
+
+    if value & sign_bit_mask:
+        # Negative: fill upper bits with 1s
+        mask = (1 << bits) - 1
+        return value | (~mask & 0xFFFFFFFFFFFFFFFF)
+    else:
+        # Positive: just mask to size
+        return value & ((1 << bits) - 1)
+
+@dataclass
+class InstructionMeta:
+    type: str # I | R | S | B | U | J
+
+class Instruction:
+    def __init__(self, instr: int):
+        self.raw = instr
+        self.opcode = instr & 0b1111_111
+        self.meta = self.get_meta()
+
+    def get_meta(self) -> InstructionMeta:
+        vals = ()
+        if self.opcode == 0b11: # Load (lb, lh etc)
+            vals = ("I")
+
+        if len(vals) == 0:
+            raise NotImplementedError(f"Type cannot be fetched for opcode={self.opcode}")
+        
+        return InstructionMeta(vals[0])
+        
+    
+    def __str__(self):
+        try:
+            return f"instruction={self.decode()}"
+        except:
+            return f"instruction={hex(self.raw)}"
+
+    def decode(self):
+        if self.get_meta() == "I":
+            return {
+                'opcode': self.opcode,
+                'rd': (R_MASKS[1] & instr) >> 7, 
+                'func3': (R_MASKS[2] & instr) >> 12,
+                'rs1': (R_MASKS[3] & instr) >> 15,
+                'imm': sign_extend((twelwe_imm & instr) >> 20, 12)
+            }
+
+
 class RV64:
     def __init__(self):
         self.regs = [0] * 32
         self.pc = OFFSET
         self.mem = bytearray(1024 * 1024)
-    
-    def fetch(self):
+
+    def fetch(self) -> Instruction:
         addr = self.pc - OFFSET
         instr = struct.unpack('<I', self.mem[addr:addr+4])[0]
-        return instr
+        return Instruction(instr)
     
-    def sign_extend(self, value, bits):
-        sign_bit_mask = 1 << (bits-1)
-
-        if value & sign_bit_mask:
-            # Negative: fill upper bits with 1s
-            mask = (1 << bits) - 1
-            return value | (~mask & 0xFFFFFFFFFFFFFFFF)
-        else:
-            # Positive: just mask to size
-            return value & ((1 << bits) - 1)
-    
-    def decode2(self, instr, type):
-        if type not in ["I", "R", "B", "S", "U", "J"]:
-            raise Exception(f"type={type} not allowed when decoding")
-        
-        opcode = instr & 0b1111_111
-
-        if type == "I":
-            return {
-                'opcode': opcode,
-                'rd': (R_MASKS[1] & instr) >> 7, 
-                'func3': (R_MASKS[2] & instr) >> 12,
-                'rs1': (R_MASKS[3] & instr) >> 15,
-                'imm': self.sign_extend((twelwe_imm & instr) >> 20, 12)
-            }
-        
-        raise NotImplementedError(f"type={type} not implemented")
-
-    
-    def decode(self, instr):
-        opcode = instr & 0b1111_111
-
-        if opcode == 0b11: # Load (lb, lh etc)
-            return self.decode2(instr, "I")
+    def decode(self, instr: Instruction) -> dict:
+        return instr.decode()
 
     def step(self):
         self.pc += 4
 
-def load_kernel(cpu):
-    path_to_kernel = '/Users/Bartek/gitreps/os/kernel.elf'
+def load_kernel(cpu, path_to_kernel):
     kf = open(path_to_kernel, 'rb')
     kernel_data = kf.read() # Byte array of the entire elf
     kf.close()
@@ -96,12 +113,12 @@ def load_kernel(cpu):
 
 if __name__ == '__main__':
     cpu = RV64()
-    load_kernel(cpu)
+    load_kernel(cpu, '/home/maikzy/gitreps/os/os/kernel.elf')
 
     instr = cpu.fetch()
-    print(hex(instr))
+    print(hex(instr.raw))
 
     cpu.step()
     instr = cpu.fetch()
-    print(hex(instr))
+    print(instr)
 
